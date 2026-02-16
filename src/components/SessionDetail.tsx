@@ -19,6 +19,9 @@ export function SessionDetail({ session }: SessionDetailProps) {
   const [validatedStatus, setValidatedStatus] = useState<'SAFE' | 'FLAGGED' | null>(null)
   const router = useRouter()
 
+  // Use the initial analysis from the session
+  const displayAnalysis = analysis || session.aiAnalysis
+
   const handleAnalyze = async () => {
     setIsAnalyzing(true)
     try {
@@ -29,7 +32,21 @@ export function SessionDetail({ session }: SessionDetailProps) {
       })
       if (!res.ok) throw new Error('Failed to analyze')
       const data = await res.json()
-      setAnalysis(data)
+      
+      // The API returns the raw AI response, we need to transform it
+      setAnalysis({
+        id: '',
+        sessionId: session.id,
+        summary: data.summary || 'No summary available',
+        contentScore: data.metrics?.contentCoverage?.score || data.contentScore || 0,
+        facilitationScore: data.metrics?.facilitationQuality?.score || data.facilitationScore || 0,
+        protocolScore: data.metrics?.protocolSafety?.score || data.safetyScore || 0,
+        justification: `Content: ${data.metrics?.contentCoverage?.score || data.contentScore || 0}/3, Facilitation: ${data.metrics?.facilitationQuality?.score || data.facilitationScore || 0}/3, Protocol: ${data.metrics?.protocolSafety?.score || data.safetyScore || 0}/3`,
+        riskFlag: data.riskDetection?.status || data.riskFlag || 'SAFE',
+        riskQuote: data.riskDetection?.quote || data.riskQuote || null,
+        validated: false,
+        supervisorNote: null,
+      })
       router.refresh() // to reflect status change on dashboard
     } catch (error) {
       console.error(error)
@@ -79,33 +96,33 @@ export function SessionDetail({ session }: SessionDetailProps) {
       </div>
 
       {/* AI Analysis Card */}
-      {analysis ? (
+      {displayAnalysis ? (
         <div className="mb-8 border rounded-lg p-6 bg-white shadow">
           <h2 className="text-xl font-semibold mb-4">AI Analysis</h2>
-          <p className="mb-2"><span className="font-medium">Summary:</span> {analysis.summary}</p>
+          <p className="mb-2"><span className="font-medium">Summary:</span> {displayAnalysis.summary}</p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 my-4">
             <ScoreCard
               title="Content Coverage"
-              score={analysis.contentScore}
-              justification={analysis.justification}
+              score={displayAnalysis.contentScore}
+              justification={displayAnalysis.justification}
             />
             <ScoreCard
               title="Facilitation Quality"
-              score={analysis.facilitationScore}
-              justification={analysis.justification}
+              score={displayAnalysis.facilitationScore}
+              justification={displayAnalysis.justification}
             />
             <ScoreCard
               title="Protocol Safety"
-              score={analysis.protocolScore}
-              justification={analysis.justification}
+              score={displayAnalysis.protocolScore}
+              justification={displayAnalysis.justification}
             />
           </div>
 
-          {analysis.riskFlag === 'RISK' && (
+          {displayAnalysis.riskFlag === 'RISK' && (
             <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded">
               <p className="font-bold text-red-700">⚠️ RISK DETECTED</p>
-              <p className="text-red-600">Quote: "{analysis.riskQuote}"</p>
+              <p className="text-red-600">Quote: "{displayAnalysis.riskQuote}"</p>
             </div>
           )}
 
@@ -133,9 +150,9 @@ export function SessionDetail({ session }: SessionDetailProps) {
                 ⚠️ Confirm Risk
               </button>
             </div>
-            {analysis.supervisorNote && (
+            {displayAnalysis.supervisorNote && (
               <p className="mt-2 text-sm text-gray-600">
-                Supervisor note: {analysis.supervisorNote}
+                Supervisor note: {displayAnalysis.supervisorNote}
               </p>
             )}
           </div>

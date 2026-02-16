@@ -42,7 +42,7 @@ export function SessionList({ sessions }: { sessions: SessionWithDetails[] }) {
               <td className="px-4 py-2">
                 <Link
                   href={`/sessions/${session.id}`}
-                  className="text-blue-600 hover:underline"
+                  className="inline-block px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
                 >
                   View
                 </Link>

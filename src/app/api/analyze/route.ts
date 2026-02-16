@@ -1,46 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import OpenAI from 'openai'
-import { z } from 'zod'
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-
-// Define the expected schema using Zod
-const AnalysisSchema = z.object({
-  summary: z.string().min(10),
-  contentScore: z.number().int().min(1).max(3),
-  contentJustification: z.string(),
-  facilitationScore: z.number().int().min(1).max(3),
-  facilitationJustification: z.string(),
-  safetyScore: z.number().int().min(1).max(3),
-  safetyJustification: z.string(),
-  riskFlag: z.enum(['SAFE', 'RISK']),
-  riskQuote: z.string().optional(),
-})
 
 export async function POST(req: NextRequest) {
   try {
     const { sessionId } = await req.json()
-    if (!sessionId) {
-      return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 })
-    }
-
+    
     const session = await prisma.session.findUnique({
       where: { id: sessionId },
-      include: { aiAnalysis: true },
+      include: { fellow: true }
     })
-
+    
     if (!session) {
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+      return new Response('Session not found', { status: 404 })
     }
-
-    if (session.aiAnalysis) {
-      return NextResponse.json({ error: 'Analysis already exists' }, { status: 400 })
-    }
-
-    // Build the prompt with rubric instructions
-    const prompt = `
-You are an expert supervisor at Shamiri, analyzing a therapy session transcript.
+    
+    // Use OpenAI to analyze the transcript
+    const openai = new (await import('openai')).default({
+      apiKey: process.env.OPENAI_API_KEY
+    })
+    
+    const prompt = `You are an expert supervisor at Shamiri, analyzing a therapy session transcript.
 Evaluate the session according to the following rubric.
 
 Rubric:
@@ -69,52 +48,50 @@ ${session.transcript}
 Return a JSON object with the following structure:
 {
   "summary": "3-sentence summary",
-  "contentScore": number,
-  "contentJustification": "string",
-  "facilitationScore": number,
-  "facilitationJustification": "string",
-  "safetyScore": number,
-  "safetyJustification": "string",
-  "riskFlag": "SAFE" | "RISK",
-  "riskQuote": "string if riskFlag is RISK, otherwise omit"
-}
-`
+  "metrics": {
+    "contentCoverage": { "score": number },
+    "facilitationQuality": { "score": number },
+    "protocolSafety": { "score": number }
+  },
+  "riskDetection": {
+    "status": "SAFE" | "RISK",
+    "quote": "string if status is RISK, otherwise null"
+  }
+}`
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini', // or gpt-4 if you have access
+      model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       response_format: { type: 'json_object' },
     })
-
-    const content = response.choices[0].message.content
-    if (!content) throw new Error('Empty response from OpenAI')
-
-    // Parse and validate with Zod
-    const parsed = AnalysisSchema.parse(JSON.parse(content))
-
-    // Save to database
-    const analysis = await prisma.aIAnalysis.create({
+    
+    const content = response.choices[0]?.message?.content
+    if (!content) {
+      throw new Error('Empty response from OpenAI')
+    }
+    
+    const analysis = JSON.parse(content)
+    
+    // Save analysis to database using AIAnalysis model
+    const updated = await prisma.session.update({
+      where: { id: sessionId },
       data: {
-        sessionId: session.id,
-        summary: parsed.summary,
-        contentScore: parsed.contentScore,
-        facilitationScore: parsed.facilitationScore,
-        protocolScore: parsed.safetyScore,
-        justification: `${parsed.contentJustification} | ${parsed.facilitationJustification} | ${parsed.safetyJustification}`,
-        riskFlag: parsed.riskFlag,
-        riskQuote: parsed.riskQuote,
-      },
+        aiAnalysis: {
+          create: {
+            summary: analysis.summary,
+            contentScore: analysis.metrics.contentCoverage.score,
+            facilitationScore: analysis.metrics.facilitationQuality.score,
+            protocolScore: analysis.metrics.protocolSafety.score,
+            justification: `Content: ${analysis.metrics.contentCoverage.score}/3, Facilitation: ${analysis.metrics.facilitationQuality.score}/3, Protocol: ${analysis.metrics.protocolSafety.score}/3`,
+            riskFlag: analysis.riskDetection.status,
+            riskQuote: analysis.riskDetection.quote,
+          }
+        },
+        status: analysis.riskDetection.status === 'RISK' ? 'FLAGGED' : 'PROCESSED'
+      }
     })
-
-    // Update session status to PROCESSED (or FLAGGED if risk)
-    await prisma.session.update({
-      where: { id: session.id },
-      data: {
-        status: parsed.riskFlag === 'RISK' ? 'FLAGGED' : 'PROCESSED',
-      },
-    })
-
+    
     return NextResponse.json(analysis)
   } catch (error) {
     console.error('Analysis error:', error)
