@@ -73,7 +73,8 @@ export function SessionDetail({ session }: SessionDetailProps) {
       })
       if (!res.ok) throw new Error('Validation failed')
       setValidatedStatus(status)
-      router.refresh()
+      // Redirect back to dashboard after successful validation
+      router.push('/')
     } catch (error) {
       alert('Failed to save validation')
     }
