@@ -127,7 +127,7 @@ export function SessionDetail({ session }: SessionDetailProps) {
           )}
 
           {/* Supervisor Validation */}
-          <div className="mt-6 border-t pt-4">
+          <div className="mt-6 border-t pt-4 relative z-10">
             <h3 className="font-semibold mb-2">Supervisor Validation</h3>
             <textarea
               className="w-full p-2 border rounded"
@@ -136,18 +136,22 @@ export function SessionDetail({ session }: SessionDetailProps) {
               value={validationNote}
               onChange={(e) => setValidationNote(e.target.value)}
             />
-            <div className="flex gap-2 mt-2">
+            <div className="flex gap-2 mt-4">
               <button
+                type="button"
                 onClick={() => handleValidate('SAFE')}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                disabled={validatedStatus === 'SAFE'}
               >
-                ✓ Validate as Safe
+                {validatedStatus === 'SAFE' ? '✓ Validated Safe' : '✓ Validate as Safe'}
               </button>
               <button
+                type="button"
                 onClick={() => handleValidate('FLAGGED')}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                disabled={validatedStatus === 'FLAGGED'}
               >
-                ⚠️ Confirm Risk
+                {validatedStatus === 'FLAGGED' ? '✓ Risk Confirmed' : '⚠️ Confirm Risk'}
               </button>
             </div>
             {displayAnalysis.supervisorNote && (

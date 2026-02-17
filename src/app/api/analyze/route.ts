@@ -1,25 +1,68 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import OpenAI from 'openai'
+import { z } from 'zod'
+
+// Initialize OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+})
+
+// Define the expected schema
+const AnalysisSchema = z.object({
+  summary: z.string().min(10),
+  contentScore: z.number().int().min(1).max(3),
+  contentJustification: z.string(),
+  facilitationScore: z.number().int().min(1).max(3),
+  facilitationJustification: z.string(),
+  protocolScore: z.number().int().min(1).max(3),
+  justification: z.string(),
+  riskFlag: z.enum(['SAFE', 'RISK']),
+  riskQuote: z.string().optional(),
+})
 
 export async function POST(req: NextRequest) {
+  console.log('📝 Analyze API called')
+  
   try {
-    const { sessionId } = await req.json()
+    const body = await req.json()
+    console.log('Request body:', body)
     
+    const { sessionId } = body
+
+    if (!sessionId) {
+      console.log('❌ Missing sessionId')
+      return NextResponse.json(
+        { error: 'Missing sessionId' },
+        { status: 400 }
+      )
+    }
+
+    // Check if session exists
     const session = await prisma.session.findUnique({
       where: { id: sessionId },
-      include: { fellow: true }
+      include: { aiAnalysis: true }
     })
-    
+
+    console.log('Session found:', session ? 'yes' : 'no')
+
     if (!session) {
-      return new Response('Session not found', { status: 404 })
+      return NextResponse.json(
+        { error: 'Session not found' },
+        { status: 404 }
+      )
     }
-    
-    // Use OpenAI to analyze the transcript
-    const openai = new (await import('openai')).default({
-      apiKey: process.env.OPENAI_API_KEY
-    })
-    
-    const prompt = `You are an expert supervisor at Shamiri, analyzing a therapy session transcript.
+
+    if (session.aiAnalysis) {
+      return NextResponse.json(
+        { error: 'Analysis already exists for this session' },
+        { status: 400 }
+      )
+    }
+
+    // Build the prompt with rubric instructions
+    const prompt = `
+You are an expert supervisor at Shamiri, analyzing a therapy session transcript.
 Evaluate the session according to the following rubric.
 
 Rubric:
@@ -48,55 +91,72 @@ ${session.transcript}
 Return a JSON object with the following structure:
 {
   "summary": "3-sentence summary",
-  "metrics": {
-    "contentCoverage": { "score": number },
-    "facilitationQuality": { "score": number },
-    "protocolSafety": { "score": number }
-  },
-  "riskDetection": {
-    "status": "SAFE" | "RISK",
-    "quote": "string if status is RISK, otherwise null"
-  }
-}`
+  "contentScore": number,
+  "contentJustification": "string",
+  "facilitationScore": number,
+  "facilitationJustification": "string",
+  "protocolScore": number,
+  "justification": "string",
+  "riskFlag": "SAFE" | "RISK",
+  "riskQuote": "string if riskFlag is RISK, otherwise omit"
+}
+`
 
+    console.log('Calling OpenAI...')
+    
+    // Call OpenAI
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-3.5-turbo-0125', // Use specific version that supports response_format
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       response_format: { type: 'json_object' },
     })
-    
-    const content = response.choices[0]?.message?.content
+
+    const content = response.choices[0].message.content
+    console.log('OpenAI response received')
+
     if (!content) {
       throw new Error('Empty response from OpenAI')
     }
-    
-    const analysis = JSON.parse(content)
-    
-    // Save analysis to database using AIAnalysis model
-    const updated = await prisma.session.update({
-      where: { id: sessionId },
+
+    // Parse and validate with Zod
+    console.log('Parsing response...')
+    const parsed = AnalysisSchema.parse(JSON.parse(content))
+    console.log('Parsed successfully:', parsed)
+
+    // Save to database
+    console.log('Saving to database...')
+    const analysis = await prisma.aIAnalysis.create({
       data: {
-        aiAnalysis: {
-          create: {
-            summary: analysis.summary,
-            contentScore: analysis.metrics.contentCoverage.score,
-            facilitationScore: analysis.metrics.facilitationQuality.score,
-            protocolScore: analysis.metrics.protocolSafety.score,
-            justification: `Content: ${analysis.metrics.contentCoverage.score}/3, Facilitation: ${analysis.metrics.facilitationQuality.score}/3, Protocol: ${analysis.metrics.protocolSafety.score}/3`,
-            riskFlag: analysis.riskDetection.status,
-            riskQuote: analysis.riskDetection.quote,
-          }
-        },
-        status: analysis.riskDetection.status === 'RISK' ? 'FLAGGED' : 'PROCESSED'
-      }
+        sessionId: session.id,
+        summary: parsed.summary,
+        contentScore: parsed.contentScore,
+        facilitationScore: parsed.facilitationScore,
+        protocolScore: parsed.protocolScore,
+        justification: parsed.justification,
+        riskFlag: parsed.riskFlag,
+        riskQuote: parsed.riskQuote || null,
+      },
     })
-    
+
+    // Update session status
+    await prisma.session.update({
+      where: { id: session.id },
+      data: {
+        status: parsed.riskFlag === 'RISK' ? 'FLAGGED' : 'PROCESSED',
+      },
+    })
+
+    console.log('✅ Analysis created successfully')
     return NextResponse.json(analysis)
+    
   } catch (error) {
-    console.error('Analysis error:', error)
+    console.error('❌ Analysis error:', error)
     return NextResponse.json(
-      { error: 'Failed to analyze session' },
+      { 
+        error: 'Failed to analyze session',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }
