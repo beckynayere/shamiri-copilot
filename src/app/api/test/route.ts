@@ -11,9 +11,9 @@ export async function GET() {
       message: 'API is working',
       environment: {
         nodeEnv: process.env.NODE_ENV,
-        openaiKeySet: !!process.env.OPENAI_API_KEY,
-        openaiKeyPrefix: process.env.OPENAI_API_KEY ? 
-          process.env.OPENAI_API_KEY.substring(0, 15) + '...' : 'not set',
+        googleKeySet: !!process.env.GOOGLE_API_KEY,
+        googleKeyPrefix: process.env.GOOGLE_API_KEY ? 
+          process.env.GOOGLE_API_KEY.substring(0, 15) + '...' : 'not set',
         databaseUrlSet: !!process.env.DATABASE_URL,
       },
       database: {

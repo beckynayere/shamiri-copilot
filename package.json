@@ -10,6 +10,7 @@
     "prisma:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^5.22.0",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-query": "^5.90.21",

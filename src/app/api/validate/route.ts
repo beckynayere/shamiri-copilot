@@ -1,8 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { checkRateLimit, getClientIP } from '@/lib/rateLimiter'
 
 export async function POST(req: NextRequest) {
   console.log('📝 Validate API called')
+  
+  // Rate limiting check
+  const clientIP = getClientIP(req);
+  const rateLimit = checkRateLimit(clientIP);
+  
+  if (!rateLimit.allowed) {
+    console.log(`⚠️ Rate limit exceeded for IP: ${clientIP}`)
+    return NextResponse.json(
+      { 
+        error: 'Rate limit exceeded',
+        message: 'Too many requests. Please try again later.',
+        retryAfter: rateLimit.retryAfter,
+        remaining: 0,
+        resetIn: rateLimit.resetIn
+      },
+      { 
+        status: 429,
+        headers: {
+          'Retry-After': String(rateLimit.retryAfter || 60),
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(rateLimit.resetIn)
+        }
+      }
+    );
+  }
+  
+  console.log(`Rate limit: ${rateLimit.remaining}/${10} requests remaining`)
   
   try {
     const body = await req.json()
@@ -50,10 +78,17 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    // Map validatedStatus to SessionStatus enum
+    const statusMap: Record<string, 'SAFE' | 'PROCESSED' | 'FLAGGED'> = {
+      'APPROVED': 'SAFE',
+      'REJECTED': 'FLAGGED'
+    };
+    const newStatus = statusMap[validatedStatus] || 'PROCESSED';
+
     // Update session status
     await prisma.session.update({
       where: { id: sessionId },
-      data: { status: validatedStatus },
+      data: { status: newStatus },
     })
 
     console.log('✅ Validation saved successfully')

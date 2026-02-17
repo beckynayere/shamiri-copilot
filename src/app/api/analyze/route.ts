@@ -1,50 +1,94 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import OpenAI from 'openai'
-import { z } from 'zod'
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import { checkRateLimit, getClientIP } from '@/lib/rateLimiter'
 
-// Initialize OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '')
 
-// Define the expected schema
-const AnalysisSchema = z.object({
-  summary: z.string().min(10),
-  contentScore: z.number().int().min(1).max(3),
-  contentJustification: z.string(),
-  facilitationScore: z.number().int().min(1).max(3),
-  facilitationJustification: z.string(),
-  protocolScore: z.number().int().min(1).max(3),
-  justification: z.string(),
-  riskFlag: z.enum(['SAFE', 'RISK']),
-  riskQuote: z.string().optional(),
-})
+// Helper function with retry logic for Gemini
+async function callGeminiWithRetry(prompt: string, maxRetries = 3) {
+  let lastError: any;
+  
+  const model = genAI.getGenerativeModel({
+  model: "gemini-2.5-flash",
+});
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const result = await model.generateContent(prompt);
+      return result;
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check if it's a rate limit error (Google uses 429)
+      if (error.status === 429 || error.message?.includes('429') || error.message?.includes('rate limit')) {
+        // Calculate wait time with exponential backoff: 1s, 2s, 4s
+        const waitTime = Math.pow(2, i) * 1000;
+        console.log(`Rate limited. Retrying in ${waitTime/1000} seconds... (Attempt ${i + 1}/${maxRetries})`);
+        
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      } else {
+        // Not a rate limit error, throw immediately
+        throw error;
+      }
+    }
+  }
+  
+  throw lastError;
+}
 
 export async function POST(req: NextRequest) {
   console.log('📝 Analyze API called')
   
+  // Check if Google API key is configured
+  if (!process.env.GOOGLE_API_KEY) {
+    return NextResponse.json(
+      { error: 'Google API key not configured. Please set GOOGLE_API_KEY in .env file.' },
+      { status: 500 }
+    )
+  }
+  
+  // Rate limiting check
+  const clientIP = getClientIP(req);
+  const rateLimit = checkRateLimit(clientIP);
+  
+  if (!rateLimit.allowed) {
+    console.log(`⚠️ Rate limit exceeded for IP: ${clientIP}`)
+    return NextResponse.json(
+      { 
+        error: 'Rate limit exceeded',
+        message: 'Too many requests. Please try again later.',
+        retryAfter: rateLimit.retryAfter
+      },
+      { 
+        status: 429,
+        headers: {
+          'Retry-After': String(rateLimit.retryAfter || 60),
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(rateLimit.resetIn)
+        }
+      }
+    );
+  }
+  
+  console.log(`Rate limit: ${rateLimit.remaining}/${10} requests remaining`)
+  
   try {
     const body = await req.json()
-    console.log('Request body:', body)
-    
     const { sessionId } = body
 
     if (!sessionId) {
-      console.log('❌ Missing sessionId')
       return NextResponse.json(
         { error: 'Missing sessionId' },
         { status: 400 }
       )
     }
 
-    // Check if session exists
     const session = await prisma.session.findUnique({
       where: { id: sessionId },
       include: { aiAnalysis: true }
     })
-
-    console.log('Session found:', session ? 'yes' : 'no')
 
     if (!session) {
       return NextResponse.json(
@@ -60,98 +104,115 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Build the prompt with rubric instructions
-    const prompt = `
-You are an expert supervisor at Shamiri, analyzing a therapy session transcript.
-Evaluate the session according to the following rubric.
-
-Rubric:
-1. Content Coverage (score 1-3):
-   1: Missed – Fellow failed to mention "Growth Mindset" or defined it incorrectly.
-   2: Partial – Mentioned concept but moved on quickly without checking understanding.
-   3: Complete – Explained clearly, gave an example, and asked for thoughts.
-
-2. Facilitation Quality (score 1-3):
-   1: Poor – Monologue, interrupted, used confusing jargon.
-   2: Adequate – Polite but transactional, stuck to script.
-   3: Excellent – Warm, encouraged quiet members, validated feelings.
-
-3. Protocol Safety (score 1-3):
-   1: Violation – Gave unauthorized advice (medical/relationship) or strayed off topic.
-   2: Minor Drift – Got distracted but brought it back.
-   3: Adherent – Stayed focused on curriculum, handled distractions gracefully.
-
-Risk Detection: If the transcript contains any indication of self-harm, severe crisis, or harm to others, set riskFlag to "RISK" and extract the exact quote. Otherwise set to "SAFE".
+    // Build the prompt for analyzing the session
+    const prompt = `You are an expert clinical supervisor analyzing a supervision session transcript. 
+Analyze the following session transcript and provide a JSON response with the following fields:
+- summary: A brief summary of the session (2-3 sentences)
+- contentScore: Rating from 1-10 for quality of discussion content
+- facilitationScore: Rating from 1-10 for supervisor's facilitation skills
+- protocolScore: Rating from 1-10 for adherence to supervision protocol
+- justification: Brief explanation of your scores
+- riskFlag: Either "SAFE" or "RISK" based on content analysis
+- riskQuote: If riskFlag is RISK, include a concerning quote from the transcript
 
 Transcript:
-"""
 ${session.transcript}
-"""
 
-Return a JSON object with the following structure:
+Respond ONLY with valid JSON in this format:
 {
-  "summary": "3-sentence summary",
-  "contentScore": number,
-  "contentJustification": "string",
-  "facilitationScore": number,
-  "facilitationJustification": "string",
-  "protocolScore": number,
-  "justification": "string",
-  "riskFlag": "SAFE" | "RISK",
-  "riskQuote": "string if riskFlag is RISK, otherwise omit"
-}
-`
+  "summary": "...",
+  "contentScore": 8,
+  "facilitationScore": 7,
+  "protocolScore": 9,
+  "justification": "...",
+  "riskFlag": "SAFE",
+  "riskQuote": null
+}`
 
-    console.log('Calling OpenAI...')
+    console.log('Calling Google Gemini with retry logic...')
     
-    // Call OpenAI
-    const response = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo-0125', // Use specific version that supports response_format
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
-      response_format: { type: 'json_object' },
-    })
-
-    const content = response.choices[0].message.content
-    console.log('OpenAI response received')
-
+    // Use retry function instead of direct call
+    const result = await callGeminiWithRetry(prompt);
+    
+    const content = result.response.text();
     if (!content) {
-      throw new Error('Empty response from OpenAI')
+      return NextResponse.json(
+        { error: 'Empty response from Google Gemini' },
+        { status: 500 }
+      );
+    }
+    console.log('Google Gemini response received:', content)
+
+    // Parse the JSON response - handle cases where model adds extra text
+    let analysisData;
+    try {
+      // Try to extract JSON from the response (in case model adds markdown formatting)
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        analysisData = JSON.parse(jsonMatch[0]);
+      } else {
+        analysisData = JSON.parse(content);
+      }
+    } catch (parseError) {
+      console.error('Failed to parse Gemini response:', parseError);
+      console.error('Raw response:', content);
+      return NextResponse.json(
+        { 
+          error: 'Failed to parse analysis response',
+          details: 'The AI response was not in valid JSON format',
+          rawResponse: content.substring(0, 500) // Include part of response for debugging
+        },
+        { status: 500 }
+      );
     }
 
-    // Parse and validate with Zod
-    console.log('Parsing response...')
-    const parsed = AnalysisSchema.parse(JSON.parse(content))
-    console.log('Parsed successfully:', parsed)
+    // Validate the response has required fields
+    const requiredFields = ['summary', 'contentScore', 'facilitationScore', 'protocolScore', 'justification', 'riskFlag'];
+    for (const field of requiredFields) {
+      if (analysisData[field] === undefined) {
+        return NextResponse.json(
+          { error: `Missing required field: ${field}` },
+          { status: 500 }
+        );
+      }
+    }
 
-    // Save to database
-    console.log('Saving to database...')
+    // Validate riskFlag is valid
+    if (!['SAFE', 'RISK'].includes(analysisData.riskFlag)) {
+      analysisData.riskFlag = 'SAFE';
+    }
+
+    // Save analysis to database
     const analysis = await prisma.aIAnalysis.create({
       data: {
         sessionId: session.id,
-        summary: parsed.summary,
-        contentScore: parsed.contentScore,
-        facilitationScore: parsed.facilitationScore,
-        protocolScore: parsed.protocolScore,
-        justification: parsed.justification,
-        riskFlag: parsed.riskFlag,
-        riskQuote: parsed.riskQuote || null,
+        summary: analysisData.summary,
+        contentScore: analysisData.contentScore,
+        facilitationScore: analysisData.facilitationScore,
+        protocolScore: analysisData.protocolScore,
+        justification: analysisData.justification,
+        riskFlag: analysisData.riskFlag,
+        riskQuote: analysisData.riskQuote || null,
       },
-    })
+    });
 
-    // Update session status
-    await prisma.session.update({
-      where: { id: session.id },
-      data: {
-        status: parsed.riskFlag === 'RISK' ? 'FLAGGED' : 'PROCESSED',
-      },
-    })
-
-    console.log('✅ Analysis created successfully')
+    console.log('✅ Analysis saved successfully:', analysis.id)
     return NextResponse.json(analysis)
-    
-  } catch (error) {
+
+  } catch (error: any) {
     console.error('❌ Analysis error:', error)
+    
+    // Check for rate limit error
+    if (error.status === 429 || error.message?.includes('429') || error.message?.includes('rate limit')) {
+      return NextResponse.json(
+        { 
+          error: 'Google API rate limit reached. Please try again in a few minutes.',
+          retryAfter: 60
+        },
+        { status: 429 }
+      )
+    }
+    
     return NextResponse.json(
       { 
         error: 'Failed to analyze session',

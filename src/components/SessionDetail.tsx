@@ -57,6 +57,9 @@ export function SessionDetail({ session }: SessionDetailProps) {
   }
 
   const handleValidate = async (status: 'SAFE' | 'FLAGGED') => {
+    // Map UI status to API status
+    const apiStatus = status === 'SAFE' ? 'APPROVED' : 'REJECTED'
+    
     // Send validation to API
     try {
       const res = await fetch('/api/validate', {
@@ -64,7 +67,7 @@ export function SessionDetail({ session }: SessionDetailProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: session.id,
-          validatedStatus: status,
+          validatedStatus: apiStatus,
           note: validationNote,
         }),
       })
