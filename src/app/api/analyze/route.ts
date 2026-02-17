@@ -104,26 +104,43 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Build the prompt for analyzing the session
+    // Build the prompt for analyzing the session using the grading rubric
     const prompt = `You are an expert clinical supervisor analyzing a supervision session transcript. 
-Analyze the following session transcript and provide a JSON response with the following fields:
-- summary: A brief summary of the session (2-3 sentences)
-- contentScore: Rating from 1-10 for quality of discussion content
-- facilitationScore: Rating from 1-10 for supervisor's facilitation skills
-- protocolScore: Rating from 1-10 for adherence to supervision protocol
-- justification: Brief explanation of your scores
-- riskFlag: Either "SAFE" or "RISK" based on content analysis
-- riskQuote: If riskFlag is RISK, include a concerning quote from the transcript
+Evaluate the session using the Shamiri Grading Rubric (1-3 scale):
+
+CONTENT COVERAGE (Did the Fellow teach "Growth Mindset"?)
+- Score 1: Missed - Didn't mention Growth Mindset
+- Score 2: Partial - Mentioned but no check for understanding  
+- Score 3: Complete - Explained, gave example, asked for thoughts
+
+FACILITATION QUALITY (How empathetic and engaging?)
+- Score 1: Poor - Monologue, interrupted, jargon
+- Score 2: Adequate - Polite but transactional
+- Score 3: Excellent - Warm, encouraged, validated
+
+PROTOCOL SAFETY (Did they stay within boundaries?)
+- Score 1: Violation - Gave unauthorized advice
+- Score 2: Minor Drift - Got distracted but came back
+- Score 3: Adherent - Stayed on curriculum
+
+Analyze the transcript and provide JSON with:
+- summary: 2-3 sentence summary
+- contentScore: 1-3
+- facilitationScore: 1-3
+- protocolScore: 1-3
+- justification: Brief explanation with rubric criteria used
+- riskFlag: "SAFE" or "RISK" (flag if text contains self-harm, crisis, or severe boundary violations)
+- riskQuote: If RISK, extract the concerning quote
 
 Transcript:
 ${session.transcript}
 
-Respond ONLY with valid JSON in this format:
+Respond ONLY with valid JSON:
 {
   "summary": "...",
-  "contentScore": 8,
-  "facilitationScore": 7,
-  "protocolScore": 9,
+  "contentScore": 3,
+  "facilitationScore": 2,
+  "protocolScore": 3,
   "justification": "...",
   "riskFlag": "SAFE",
   "riskQuote": null

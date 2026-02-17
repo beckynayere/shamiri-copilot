@@ -181,7 +181,12 @@ export function SessionDetail({ session }: SessionDetailProps) {
 }
 
 function ScoreCard({ title, score, justification }: { title: string; score: number; justification: string }) {
-  const scoreLabels = ['', 'Missed/Poor', 'Partial/Adequate', 'Complete/Excellent']
+  const scoreLabels: Record<number, string> = {
+    0: 'Pending',
+    1: 'Missed/Poor/Violation',
+    2: 'Partial/Adequate/Drift',
+    3: 'Complete/Excellent/Adherent'
+  }
   return (
     <div className="p-3 border rounded">
       <h4 className="font-medium">{title}</h4>
@@ -196,7 +201,7 @@ function ScoreCard({ title, score, justification }: { title: string; score: numb
             {s}
           </span>
         ))}
-        <span className="ml-2 text-sm">{scoreLabels[score]}</span>
+        <span className="ml-2 text-sm">{scoreLabels[score] || 'N/A'}</span>
       </div>
       <p className="text-sm text-gray-600">{justification}</p>
     </div>

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { SessionList } from '@/components/SessionList'
+import { CreateSessionForm } from '@/components/CreateSessionForm'
 
 export default async function HomePage() {
   const sessions = await prisma.session.findMany({
@@ -12,7 +13,10 @@ export default async function HomePage() {
 
   return (
     <main className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-6">Supervisor Copilot</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Supervisor Copilot</h1>
+        <CreateSessionForm />
+      </div>
       <SessionList sessions={sessions} />
     </main>
   )
