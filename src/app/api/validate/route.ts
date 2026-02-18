@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { checkRateLimit, getClientIP } from '@/lib/rateLimiter'
+import { withAuth } from '@/lib/auth'
 
 export async function POST(req: NextRequest) {
+  // Check authentication
+  const authError = await withAuth()
+  if (authError) return authError
+
   console.log('📝 Validate API called')
   
   // Rate limiting check

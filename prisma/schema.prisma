@@ -17,6 +17,8 @@ model Supervisor {
   id        String   @id @default(uuid())
   name      String
   email     String   @unique
+  password  String?
+  role      String   @default("SUPERVISOR")
   sessions  Session[]
   createdAt DateTime @default(now())
 }

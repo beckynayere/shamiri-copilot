@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { checkRateLimit, getClientIP } from '@/lib/rateLimiter'
+import { withAuth } from '@/lib/auth'
 
 export async function GET() {
+  // Check authentication
+  const authError = await withAuth()
+  if (authError) return authError
+
   // Get all fellows and supervisors for the form dropdowns
   const [fellows, supervisors] = await Promise.all([
     prisma.fellow.findMany({ orderBy: { name: 'asc' } }),
@@ -39,6 +44,10 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  // Check authentication
+  const authError = await withAuth()
+  if (authError) return authError
+
   console.log('📝 Create Session API called')
   
   // Rate limiting check

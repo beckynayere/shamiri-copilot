@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { withAuth } from '@/lib/auth'
 
 export async function GET() {
+  // Check authentication
+  const authError = await withAuth()
+  if (authError) return authError
+
   const fellows = await prisma.fellow.findMany({ 
     orderBy: { name: 'asc' } 
   })
@@ -9,6 +14,10 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  // Only ADMIN can create fellows
+  const authError = await withAuth("ADMIN")
+  if (authError) return authError
+
   try {
     const body = await req.json()
     const { name } = body

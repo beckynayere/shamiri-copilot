@@ -4,7 +4,11 @@ import { CreateSessionForm } from '@/components/CreateSessionForm'
 import { auth, signOut } from '@/auth'
 import { redirect } from 'next/navigation'
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>
+}) {
   const session = await auth()
   
   // If not logged in, redirect to login
@@ -12,13 +16,24 @@ export default async function HomePage() {
     redirect('/login')
   }
 
-  const sessions = await prisma.session.findMany({
-    include: {
-      fellow: true,
-      aiAnalysis: true,
-    },
-    orderBy: { date: 'desc' },
-  })
+  const { page } = await searchParams
+  const currentPage = parseInt(page || '1', 10)
+  const pageSize = 10
+
+  const [sessions, totalCount] = await Promise.all([
+    prisma.session.findMany({
+      include: {
+        fellow: true,
+        aiAnalysis: true,
+      },
+      orderBy: { date: 'desc' },
+      skip: (currentPage - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.session.count(),
+  ])
+
+  const totalPages = Math.ceil(totalCount / pageSize)
 
   return (
     <main className="container mx-auto p-4">
@@ -42,7 +57,12 @@ export default async function HomePage() {
           </form>
         </div>
       </div>
-      <SessionList sessions={sessions} />
+      <SessionList 
+        sessions={sessions} 
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalCount={totalCount}
+      />
     </main>
   )
 }

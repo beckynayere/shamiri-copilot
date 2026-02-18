@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { checkRateLimit, getClientIP } from '@/lib/rateLimiter'
+import { withAuth } from '@/lib/auth'
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '')
 
@@ -39,6 +40,10 @@ async function callGeminiWithRetry(prompt: string, maxRetries = 3) {
 }
 
 export async function POST(req: NextRequest) {
+  // Check authentication
+  const authError = await withAuth()
+  if (authError) return authError
+
   console.log('📝 Analyze API called')
   
   // Check if Google API key is configured
