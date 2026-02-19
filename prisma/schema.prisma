@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -14,53 +8,49 @@ datasource db {
 }
 
 model Supervisor {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   name      String
-  email     String   @unique
+  email     String    @unique
   password  String?
-  role      String   @default("SUPERVISOR")
+  role      String    @default("SUPERVISOR")
+  createdAt DateTime  @default(now())
   sessions  Session[]
-  createdAt DateTime @default(now())
 }
 
 model Fellow {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   name      String
+  createdAt DateTime  @default(now())
   sessions  Session[]
-  createdAt DateTime @default(now())
 }
 
 model Session {
-  id            String   @id @default(uuid())
-  date          DateTime
-  groupId       String
-  transcript    String
-  status        SessionStatus @default(PROCESSED)
-  supervisorId  String
-  fellowId      String
-
-  supervisor    Supervisor @relation(fields: [supervisorId], references: [id])
-  fellow        Fellow     @relation(fields: [fellowId], references: [id])
-  aiAnalysis    AIAnalysis?
-
-  createdAt     DateTime @default(now())
+  id           String        @id @default(uuid())
+  date         DateTime
+  groupId      String
+  transcript   String
+  status       SessionStatus @default(PROCESSED)
+  supervisorId String
+  fellowId     String
+  createdAt    DateTime      @default(now())
+  aiAnalysis   AIAnalysis?
+  fellow       Fellow        @relation(fields: [fellowId], references: [id])
+  supervisor   Supervisor    @relation(fields: [supervisorId], references: [id])
 }
 
 model AIAnalysis {
-  id              String   @id @default(uuid())
-  sessionId       String   @unique
-  summary         String
-  contentScore    Int
+  id                String   @id @default(uuid())
+  sessionId         String   @unique
+  summary           String
+  contentScore      Int
   facilitationScore Int
-  protocolScore   Int
-  justification   String
-  riskFlag        RiskFlag
-  riskQuote       String?
-
-  validated       Boolean  @default(false)
-  supervisorNote  String?
-
-  session         Session  @relation(fields: [sessionId], references: [id])
+  protocolScore     Int
+  justification     String
+  riskFlag          RiskFlag
+  riskQuote         String?
+  validated         Boolean  @default(false)
+  supervisorNote    String?
+  session           Session  @relation(fields: [sessionId], references: [id])
 }
 
 enum SessionStatus {
@@ -74,4 +64,3 @@ enum RiskFlag {
   SAFE
   RISK
 }
-
