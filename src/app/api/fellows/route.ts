@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { withAuth } from '@/lib/auth'
 
 export async function GET() {
-  // Check authentication
+  // Allow authenticated users to get fellows list
   const authError = await withAuth()
   if (authError) return authError
 
@@ -14,8 +14,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  // Only ADMIN can create fellows
-  const authError = await withAuth("ADMIN")
+  // Allow authenticated supervisors to create fellows
+  const authError = await withAuth("SUPERVISOR")
   if (authError) return authError
 
   try {
