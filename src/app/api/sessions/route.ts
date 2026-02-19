@@ -47,8 +47,6 @@ export async function POST(req: NextRequest) {
   // Check authentication
   const authError = await withAuth()
   if (authError) return authError
-
-  console.log('📝 Create Session API called')
   
   // Rate limiting check
   const clientIP = getClientIP(req);
@@ -63,7 +61,6 @@ export async function POST(req: NextRequest) {
   
   try {
     const body = await req.json()
-    console.log('Create session request:', body)
     const { fellowId, supervisorId, date, groupId, transcript } = body
 
     // Validate required fields
@@ -77,14 +74,12 @@ export async function POST(req: NextRequest) {
     // Verify fellow exists
     const fellow = await prisma.fellow.findUnique({ where: { id: fellowId } })
     if (!fellow) {
-      console.log('Fellow not found:', fellowId)
       return NextResponse.json({ error: 'Fellow not found', fellowId }, { status: 404 })
     }
 
     // Verify supervisor exists
     const supervisor = await prisma.supervisor.findUnique({ where: { id: supervisorId } })
     if (!supervisor) {
-      console.log('Supervisor not found:', supervisorId)
       return NextResponse.json({ error: 'Supervisor not found', supervisorId }, { status: 404 })
     }
 
@@ -103,11 +98,9 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    console.log('✅ Session created successfully:', session.id)
     return NextResponse.json(session, { status: 201 })
     
   } catch (error) {
-    console.error('❌ Create session error:', error)
     return NextResponse.json(
       { error: 'Failed to create session' },
       { status: 500 }

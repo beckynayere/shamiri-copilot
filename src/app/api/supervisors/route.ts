@@ -52,7 +52,6 @@ export async function POST(req: NextRequest) {
     const supervisor = result[0]
     return NextResponse.json(supervisor, { status: 201 })
   } catch (error) {
-    console.error('Create supervisor error:', error)
     return NextResponse.json({ error: 'Failed to create supervisor' }, { status: 500 })
   }
 }

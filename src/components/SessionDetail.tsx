@@ -49,7 +49,6 @@ export function SessionDetail({ session }: SessionDetailProps) {
       })
       router.refresh() // to reflect status change on dashboard
     } catch (error) {
-      console.error(error)
       alert('Analysis failed. Please try again.')
     } finally {
       setIsAnalyzing(false)

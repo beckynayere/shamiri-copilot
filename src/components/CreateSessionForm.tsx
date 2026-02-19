@@ -57,7 +57,7 @@ export function CreateSessionForm() {
         if (supervisorsData.length > 0) {
           setFormData(prev => ({ ...prev, supervisorId: supervisorsData[0].id }))
         }
-      }).catch(console.error)
+      })
     }
   }, [isOpen])
 
@@ -133,7 +133,6 @@ export function CreateSessionForm() {
       })
       window.location.reload()
     } catch (error) {
-      console.error(error)
       alert('Failed to create session')
     } finally {
       setIsSubmitting(false)

@@ -25,7 +25,6 @@ async function callGeminiWithRetry(prompt: string, maxRetries = 3) {
       if (error.status === 429 || error.message?.includes('429') || error.message?.includes('rate limit')) {
         // Calculate wait time with exponential backoff: 1s, 2s, 4s
         const waitTime = Math.pow(2, i) * 1000;
-        console.log(`Rate limited. Retrying in ${waitTime/1000} seconds... (Attempt ${i + 1}/${maxRetries})`);
         
         // Wait before retrying
         await new Promise(resolve => setTimeout(resolve, waitTime));
@@ -44,8 +43,6 @@ export async function POST(req: NextRequest) {
   const authError = await withAuth()
   if (authError) return authError
 
-  console.log('📝 Analyze API called')
-  
   // Check if Google API key is configured
   if (!process.env.GOOGLE_API_KEY) {
     return NextResponse.json(
@@ -59,7 +56,6 @@ export async function POST(req: NextRequest) {
   const rateLimit = checkRateLimit(clientIP);
   
   if (!rateLimit.allowed) {
-    console.log(`⚠️ Rate limit exceeded for IP: ${clientIP}`)
     return NextResponse.json(
       { 
         error: 'Rate limit exceeded',
@@ -76,8 +72,6 @@ export async function POST(req: NextRequest) {
       }
     );
   }
-  
-  console.log(`Rate limit: ${rateLimit.remaining}/${10} requests remaining`)
   
   try {
     const body = await req.json()
@@ -151,7 +145,6 @@ Respond ONLY with valid JSON:
   "riskQuote": null
 }`
 
-    console.log('Calling Google Gemini with retry logic...')
     
     // Use retry function instead of direct call
     const result = await callGeminiWithRetry(prompt);
@@ -163,7 +156,6 @@ Respond ONLY with valid JSON:
         { status: 500 }
       );
     }
-    console.log('Google Gemini response received:', content)
 
     // Parse the JSON response - handle cases where model adds extra text
     let analysisData;
@@ -176,8 +168,6 @@ Respond ONLY with valid JSON:
         analysisData = JSON.parse(content);
       }
     } catch (parseError) {
-      console.error('Failed to parse Gemini response:', parseError);
-      console.error('Raw response:', content);
       return NextResponse.json(
         { 
           error: 'Failed to parse analysis response',
@@ -218,11 +208,9 @@ Respond ONLY with valid JSON:
       },
     });
 
-    console.log('✅ Analysis saved successfully:', analysis.id)
     return NextResponse.json(analysis)
 
   } catch (error: any) {
-    console.error('❌ Analysis error:', error)
     
     // Check for rate limit error
     if (error.status === 429 || error.message?.includes('429') || error.message?.includes('rate limit')) {
